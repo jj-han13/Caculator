@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Reflection.Metadata.Ecma335;
 using System.Windows.Forms.VisualStyles;
 using static System.Net.Mime.MediaTypeNames;
 
@@ -101,7 +102,7 @@ namespace Caculator
         {
             SetEmptyStringWhenException();
             SetEmptyStringWhenAnswer();
-            SetDotNoChange();
+            SetDot();
         }
 
         private void Button_0_Click(object sender, EventArgs e)
@@ -188,8 +189,11 @@ namespace Caculator
             // 补全0
             AddZero(ref text_mid);
 
-            // 转成后缀表达式
+            // 转成后缀表达式，如果在转化表达式的过程中发现了非法运算数和非法除法
             text_hou = ChangeHouZhui(text_mid, opStatus);
+
+            //如果存在非法运算数和非法除法
+            if (text_hou is null) return;
 
             // 计算后缀表达式
             result = CaculateHouZhui(text_hou, opStatus);
@@ -213,6 +217,14 @@ namespace Caculator
         private double CaculateHouZhui(List<object> text_hou, Dictionary<char, int> opStatus)
         {
             double result = -1;
+
+            // 当只有一个数字时，直接输出该数字
+            if (text_hou.Count == 1)
+            {
+                result = (double)text_hou[0];
+                return result;
+            }
+
             //创建两个栈 
             Stack<double> stack_num = new Stack<double>();
             Stack<char> stack_op = new Stack<char>();
@@ -265,8 +277,13 @@ namespace Caculator
             Stack<double> stack_num = new Stack<double>();
             Stack<char> stack_op = new Stack<char>();
 
+            // 是否有运算符
+            bool flag = false;
+
+
             int index = 0;
             int pre = 0, p = 0; //上一个符号的下一位、当前符号
+            // 这事在找到运算符时，进行的逻辑
             while (index < text_mid.Length)
             {
                 if (text_mid[index] == '+' || text_mid[index] == '-'
@@ -274,7 +291,21 @@ namespace Caculator
                 {
                     p = index;
                     string str = text_mid.Substring(pre, p - pre);
-                    text_hou.Add(double.Parse(str));
+                    double num;
+                    //判断 操作符前是否是 非数字
+                    if (JudgeIsNotNumber(str, out num))
+                    {
+                        this.textBox1.Text = "输入非数字";
+                        return null;
+                    }
+                    text_hou.Add(num);
+
+                    //判断前一个是否发生了非法除法。
+                    if (pre != 0 && text_mid[pre - 1] == '/' && num == 0)
+                    {
+                        this.textBox1.Text = "非法除法";
+                        return null;
+                    }
 
                     // 栈中优先级大于等于当前操作符的先出栈
                     while (stack_op.Count != 0 && opStatus[stack_op.Peek()] >= opStatus[text_mid[index]])
@@ -290,12 +321,32 @@ namespace Caculator
                     || c == '*' || c == '/'))
                     {
                         string s = text_mid.Substring(pre, text_mid.Length - pre);
-                        text_hou.Add(double.Parse(s));
+                        double num1;
+                        //最后一个运算符，判断后一个是否为非数字
+                        if (JudgeIsNotNumber(s, out num1))
+                        {
+                            this.textBox1.Text = "输入非数字";
+                            return null;
+                        }
+
+                        // 最后一个运算符，判断后一个是否发生了非法除法。
+                        if (text_mid[p] == '/' && num1 == 0)
+                        {
+                            this.textBox1.Text = "非法除法";
+                            return null;
+                        }
+
+                        text_hou.Add(num1);
+                        flag = true;
                         break;
                     }
+
+                    // 表达式中存在运算符
+
                 }
                 ++index;
             }
+
             // 将运算符 出栈
             while (stack_op.Count != 0)
             {
@@ -303,10 +354,36 @@ namespace Caculator
                 text_hou.Add(temp);
             }
 
+            // 如果没有操作符
+            if (flag is false)
+            {
+                double num;
+                if (JudgeIsNotNumber(text_mid, out num))
+                {
+                    this.textBox1.Text = "非数字";
+                    return null;
+                }
+                else
+                {
+                    text_hou.Add(double.Parse(text_mid));
+                }
+            }
+
             return text_hou;
         }
-
         /// <summary>
+        /// 判断是否是数字。
+        /// </summary>
+        /// <param name="str"></param>
+        /// <param name="num"></param>
+        /// <returns></returns>
+        private bool JudgeIsNotNumber(string str, out double num)
+        {
+            bool flag = double.TryParse(str, out num);
+            return !flag;
+        }
+
+        /// <summary>!
         /// 当存在上次的错误提示 或者 框中是上次的答案，重新输入需要清空textBox.
         /// </summary>
         private void SetEmptyStringWhenException()
@@ -330,16 +407,24 @@ namespace Caculator
             }
         }
         /// <summary>
-        /// 输入dot.
+        /// 向前探寻，直到边界或者一个运算符，如果存在dot，则不应该输入，反之输入。
         /// </summary>
-        private void SetDotNoChange()
+        private void SetDot()
         {
+            bool flag = false;
             if (!string.IsNullOrEmpty(this.textBox1.Text))
-                if (textBox1.Text.Last() == '.')
+                for (int index = this.textBox1.Text.Length - 1; index >= 0 && this.textBox1.Text[index] != '+' && this.textBox1.Text[index] != '-'
+                    && this.textBox1.Text[index] != '*' && this.textBox1.Text[index] != '/'; index--)
                 {
-                    return;
+                    if (this.textBox1.Text[index] == '.')
+                    {
+                        flag = true;
+                    }
                 }
-            this.textBox1.Text += ".";
+            if (!flag)
+            {
+                this.textBox1.Text += ".";
+            }
         }
         /// <summary>
         /// 如果首位为正负号，则在首尾补一个0.
@@ -385,17 +470,17 @@ namespace Caculator
                 goto distinct;
             }
 
-            //情况四 当存在 除零情况 时，直接打印错误
-            for (int i = 0; i < text_mid.Length - 1; i++)
-            {
-                // 判断 除法 0
-                if (text_mid[i] == '/' && text_mid[i + 1] == '0')
-                {
-                    this.textBox1.Text = "除法错误";
-                    flag = true;
-                    break;
-                }
-            }
+        ////情况四 当存在 除零情况 时，直接打印错误 改
+        //for (int i = 0; i < text_mid.Length - 1; i++)
+        //{
+        //    // 判断 除法 0
+        //    if (text_mid[i] == '/' && text_mid[i + 1] == '0')
+        //    {
+        //        this.textBox1.Text = "除法错误";
+        //        flag = true;
+        //        break;
+        //    }
+        //}
 
         distinct: return flag;
         }
